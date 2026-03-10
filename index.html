@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIMANTAP - Kemenag Bontang</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+        
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: #f8fafc;
+        }
+
+        .sidebar-active {
+            background-color: rgba(21, 128, 61, 0.1);
+            color: #15803d;
+            border-right: 4px solid #15803d;
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(226, 232, 240, 0.8);
+        }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    </style>
+</head>
+<body class="text-slate-800">
+
+    <div id="app">
+        <div id="main-container" class="min-h-screen"></div>
+    </div>
+
+    <div id="toast-container" class="fixed top-5 right-5 z-[9999]"></div>
+
+    <script>
+        // --- DATA INITIALIZATION ---
+        const SATKERS = [
+            'Tata Usaha (TU)', 
+            'Bimas Islam', 
+            'Pendidikan Islam (Pendis)', 
+            'Penyelenggara Haji & Umrah',
+            'KUA Bontang Barat', 
+            'KUA Bontang Utara', 
+            'KUA Bontang Selatan'
+        ];
+
+        const JABATANS = ['Kepala Kantor', 'Kasubbag TU', 'Kasi', 'Penyelenggara', 'JFT', 'JFU', 'Kepala KUA', 'Penghulu', 'Penyuluh'];
+        const GOLONGANS = ['IV/a', 'III/d', 'III/c', 'III/b', 'III/a', 'II/d', 'II/c'];
+
+        const getDefaultAdmins = () => SATKERS.map((satker, index) => {
+            const slug = satker.toLowerCase().replace(/ /g, '').replace(/[()]/g, '');
+            return {
+                id: `admin-${index}`,
+                nip: `admin_${slug}`,
+                name: `Admin ${satker}`,
+                password: 'admin',
+                role: 'admin',
+                satker: satker,
+                status: 'verified',
+                jabatan: 'Admin Sistem',
+                golongan: '-'
+            };
+        });
+        
+        const savedUsers = JSON.parse(localStorage.getItem('simantap_users'));
+        let state = {
+            view: 'login',
+            user: null,
+            activeTab: 'home',
+            users: savedUsers || getDefaultAdmins(),
+            tasks: JSON.parse(localStorage.getItem('simantap_tasks')) || [],
+            reports: JSON.parse(localStorage.getItem('simantap_reports')) || []
+        };
+
+        // --- UTILS ---
+        function saveState() {
+            localStorage.setItem('simantap_users', JSON.stringify(state.users));
+            localStorage.setItem('simantap_tasks', JSON.stringify(state.tasks));
+            localStorage.setItem('simantap_reports', JSON.stringify(state.reports));
+        }
+
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            const bgColor = type === 'success' ? 'bg-green-600' : 'bg-red-600';
+            toast.className = `${bgColor} text-white px-6 py-3 rounded-xl shadow-2xl mb-3 flex items-center gap-2 animate-in slide-in-from-right duration-300`;
+            toast.innerHTML = `<i data-lucide="${type === 'success' ? 'check-circle' : 'alert-circle'}" class="w-5 h-5"></i> <span>${message}</span>`;
+            container.appendChild(toast);
+            lucide.createIcons();
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 500);
+            }, 3000);
+        }
+
+        function calculatePerformance(userId) {
+            const userReports = state.reports.filter(r => r.pegawaiId === userId);
+            if (!userReports.length) return "N/A";
+            const scores = userReports.map(r => {
+                if (r.penilaian === 'Sangat Baik') return 100;
+                if (r.penilaian === 'Baik') return 80;
+                if (r.penilaian === 'Cukup') return 60;
+                return 0;
+            }).filter(s => s > 0);
+            if (!scores.length) return "Belum Dinilai";
+            const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+            if (avg >= 90) return "Sangat Baik";
+            if (avg >= 75) return "Baik";
+            return "Cukup";
+        }
+
+        // --- VIEWS ---
+        function render() {
+            const root = document.getElementById('main-container');
+            if (state.view === 'login') root.innerHTML = renderLogin();
+            else if (state.view === 'register') root.innerHTML = renderRegister();
+            else if (state.view === 'pending') root.innerHTML = renderPending();
+            else root.innerHTML = renderDashboard();
+            lucide.createIcons();
+        }
+
+        function renderLogin() {
+            return `
+                <div class="min-h-screen flex items-center justify-center p-6 bg-gradient-to-br from-green-800 to-emerald-900">
+                    <div class="bg-white rounded-3xl shadow-2xl overflow-hidden max-w-4xl w-full flex flex-col md:flex-row">
+                        <div class="md:w-1/2 bg-green-700 p-12 text-white flex flex-col justify-center items-center text-center">
+                            <div class="w-24 h-24 bg-white rounded-full flex items-center justify-center mb-6 shadow-lg">
+                                <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/f/f2/Lambang_Kementerian_Agama.svg/1200px-Lambang_Kementerian_Agama.svg.png" class="w-16 h-16 object-contain">
+                            </div>
+                            <h1 class="text-4xl font-bold mb-2 tracking-tight">SIMANTAP</h1>
+                            <p class="text-green-100 opacity-80 leading-relaxed text-sm">Sistem Manajemen Terpadu Pegawai<br>Kemenag Kota Bontang</p>
+                        </div>
+                        <div class="md:w-1/2 p-12">
+                            <h2 class="text-2xl font-bold text-slate-800 mb-6">Login Sistem</h2>
+                            <form onsubmit="handleLogin(event)" class="space-y-5">
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-600 mb-2">NIP / Username</label>
+                                    <input id="login-nip" type="text" required class="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-green-500 outline-none transition" placeholder="NIP atau admin_satker">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-600 mb-2">Kata Sandi</label>
+                                    <input id="login-pass" type="password" required class="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-green-500 outline-none transition" placeholder="••••••••">
+                                </div>
+                                <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl transition shadow-lg">Masuk</button>
+                            </form>
+                            <p class="text-slate-500 text-sm mt-8 text-center">Pegawai Baru? <button onclick="navigate('register')" class="text-green-600 font-bold hover:underline">Daftar Akun</button></p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderRegister() {
+            const satkerOptions = SATKERS.map(s => `<option value="${s}">${s}</option>`).join('');
+            const jabOptions = JABATANS.map(j => `<option value="${j}">${j}</option>`).join('');
+            const golOptions = GOLONGANS.map(g => `<option value="${g}">${g}</option>`).join('');
+            return `
+                <div class="min-h-screen flex items-center justify-center p-6 bg-slate-100">
+                    <div class="bg-white rounded-3xl shadow-xl p-10 max-w-2xl w-full border border-slate-200">
+                        <h2 class="text-2xl font-bold text-slate-800 mb-2">Pendaftaran Pegawai</h2>
+                        <p class="text-slate-500 mb-8 text-sm">Lengkapi data Anda untuk diverifikasi oleh Admin Satker.</p>
+                        <form onsubmit="handleRegister(event)" class="space-y-4">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-600 mb-1">Nama Lengkap</label>
+                                    <input id="reg-name" type="text" required class="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-green-500 outline-none">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-600 mb-1">NIP</label>
+                                    <input id="reg-nip" type="text" required class="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-green-500 outline-none">
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-600 mb-1">Satker</label>
+                                    <select id="reg-satker" class="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-green-500 outline-none">${satkerOptions}</select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-600 mb-1">Jabatan</label>
+                                    <select id="reg-jabatan" class="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-green-500 outline-none">${jabOptions}</select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-600 mb-1">Golongan</label>
+                                    <select id="reg-golongan" class="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-green-500 outline-none">${golOptions}</select>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-slate-600 mb-1">Buat Kata Sandi</label>
+                                <input id="reg-pass" type="password" required class="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-green-500 outline-none">
+                            </div>
+                            <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl mt-4 transition">Ajukan Pendaftaran</button>
+                        </form>
+                        <button onclick="navigate('login')" class="w-full mt-4 text-slate-500 text-sm hover:underline">Sudah punya akun? Masuk</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderPending() {
+            return `
+                <div class="min-h-screen flex items-center justify-center p-6 bg-amber-50">
+                    <div class="bg-white p-10 rounded-3xl shadow-xl text-center max-w-md border border-amber-100">
+                        <div class="w-20 h-20 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                            <i data-lucide="clock" class="w-10 h-10"></i>
+                        </div>
+                        <h2 class="text-2xl font-bold text-slate-800 mb-3">Menunggu Verifikasi</h2>
+                        <p class="text-slate-500 mb-8 leading-relaxed">Akun Anda sedang ditinjau oleh <strong>Admin ${state.user.satker}</strong>.</p>
+                        <button onclick="logout()" class="w-full py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition">Kembali ke Login</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderDashboard() {
+            const isAdmin = state.user.role === 'admin';
+            return `
+                <div class="flex h-screen overflow-hidden">
+                    <aside class="w-20 lg:w-72 bg-white border-r border-slate-200 flex flex-col transition-all">
+                        <div class="p-6 border-b border-slate-100 flex items-center gap-3">
+                            <div class="w-10 h-10 bg-green-600 rounded-xl flex items-center justify-center text-white shrink-0"><i data-lucide="shield-check"></i></div>
+                            <span class="hidden lg:block font-extrabold text-xl tracking-tighter text-green-800">SIMANTAP</span>
+                        </div>
+                        <nav class="flex-1 p-4 space-y-2 overflow-y-auto">
+                            ${renderNavItem('home', 'layout-dashboard', 'Beranda')}
+                            ${renderNavItem('disposisi', 'file-text', 'e-Disposisi')}
+                            ${renderNavItem('laporan', 'clipboard-list', 'Laporan Kinerja')}
+                            ${isAdmin ? renderNavItem('verifikasi', 'user-check', 'Data & Verifikasi') : ''}
+                        </nav>
+                        <div class="p-4 border-t border-slate-100">
+                            <button onclick="logout()" class="w-full flex items-center gap-3 p-3 text-red-500 hover:bg-red-50 rounded-xl transition">
+                                <i data-lucide="log-out"></i>
+                                <span class="hidden lg:block font-semibold">Keluar</span>
+                            </button>
+                        </div>
+                    </aside>
+
+                    <main class="flex-1 flex flex-col overflow-hidden">
+                        <header class="h-20 bg-white border-b border-slate-100 px-8 flex items-center justify-between">
+                            <div class="flex flex-col">
+                                <h2 class="font-bold text-lg text-slate-800 uppercase tracking-wide leading-none">${state.activeTab.replace('-', ' ')}</h2>
+                                <span class="text-[10px] text-slate-400 font-bold mt-1">SIMANTAP v1.2 • SATKER: ${state.user.satker}</span>
+                            </div>
+                            <div class="flex items-center gap-4">
+                                <div class="text-right hidden sm:block">
+                                    <p class="text-sm font-bold text-slate-800">${state.user.name}</p>
+                                    <p class="text-[10px] font-bold text-green-600 uppercase tracking-widest">${state.user.jabatan}</p>
+                                </div>
+                                <div class="w-10 h-10 rounded-full bg-slate-100 border-2 border-white shadow-sm flex items-center justify-center font-bold text-green-700">
+                                    ${state.user.name.charAt(0)}
+                                </div>
+                            </div>
+                        </header>
+                        <div class="flex-1 overflow-y-auto p-8 bg-slate-50/50">
+                            ${renderTabContent()}
+                        </div>
+                    </main>
+                </div>
+            `;
+        }
+
+        function renderNavItem(id, icon, label) {
+            const active = state.activeTab === id ? 'sidebar-active' : 'text-slate-500 hover:bg-slate-50';
+            return `<button onclick="switchTab('${id}')" class="w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 ${active}"><i data-lucide="${icon}"></i><span class="hidden lg:block font-semibold">${label}</span></button>`;
+        }
+
+        function renderTabContent() {
+            const isAdmin = state.user.role === 'admin';
+            if (state.activeTab === 'home') return renderHome();
+            if (state.activeTab === 'disposisi') return isAdmin ? renderAdminDisposisi() : renderPegawaiDisposisi();
+            if (state.activeTab === 'laporan') return isAdmin ? renderAdminLaporan() : renderPegawaiLaporan();
+            if (state.activeTab === 'verifikasi') return renderAdminVerifikasi();
+        }
+
+        function renderHome() {
+            const isAdmin = state.user.role === 'admin';
+            const mySatkerPegawai = state.users.filter(u => u.satker === state.user.satker && u.role === 'pegawai' && u.status === 'verified');
+            
+            if (isAdmin) {
+                return `
+                    <div class="space-y-6">
+                        <div class="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                            <div class="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                                <h3 class="font-bold text-slate-800">Matriks & Data Pegawai Satker</h3>
+                                <span class="bg-green-100 text-green-700 px-3 py-1 rounded-full text-[10px] font-bold uppercase">${state.user.satker}</span>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left">
+                                    <thead class="bg-slate-50 border-b border-slate-100">
+                                        <tr>
+                                            <th class="p-5 text-xs font-bold text-slate-400 uppercase">Nama / NIP</th>
+                                            <th class="p-5 text-xs font-bold text-slate-400 uppercase">Jabatan / Gol</th>
+                                            <th class="p-5 text-xs font-bold text-slate-400 uppercase">Matriks Kinerja</th>
+                                            <th class="p-5 text-xs font-bold text-slate-400 uppercase text-center">Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${mySatkerPegawai.map(u => `
+                                            <tr class="border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition">
+                                                <td class="p-5">
+                                                    <div class="font-bold text-slate-700">${u.name}</div>
+                                                    <div class="text-[10px] text-slate-400 font-mono">${u.nip}</div>
+                                                </td>
+                                                <td class="p-5">
+                                                    <div class="text-sm font-semibold">${u.jabatan}</div>
+                                                    <div class="text-[10px] text-blue-600 font-bold">Gol: ${u.golongan}</div>
+                                                </td>
+                                                <td class="p-5">
+                                                    <div class="flex items-center gap-2">
+                                                        <span class="px-3 py-1 rounded-full text-[10px] font-bold uppercase ${calculatePerformance(u.id) === 'Sangat Baik' ? 'bg-green-100 text-green-700' : (calculatePerformance(u.id) === 'Baik' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700')}">
+                                                            ${calculatePerformance(u.id)}
+                                                        </span>
+                                                    </div>
+                                                </td>
+                                                <td class="p-5 text-center text-slate-300">
+                                                    <button onclick="switchTab('verifikasi')" class="hover:text-green-600"><i data-lucide="eye" class="w-4 h-4"></i></button>
+                                                </td>
+                                            </tr>
+                                        `).join('') || '<tr><td colspan="4" class="p-10 text-center text-slate-400">Belum ada pegawai terverifikasi.</td></tr>'}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                const perf = calculatePerformance(state.user.id);
+                return `
+                    <div class="space-y-8">
+                        <div class="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm flex flex-col md:flex-row items-center gap-8">
+                            <div class="w-32 h-32 rounded-3xl bg-green-50 flex flex-col items-center justify-center border-2 border-green-100">
+                                <span class="text-[10px] font-bold text-green-400 uppercase mb-1">Hasil Matriks</span>
+                                <div class="text-center">
+                                    <p class="text-xs font-extrabold text-green-700 leading-tight">${perf}</p>
+                                </div>
+                            </div>
+                            <div class="flex-1 text-center md:text-left">
+                                <h3 class="text-2xl font-bold text-slate-800">${state.user.name}</h3>
+                                <p class="text-slate-500 mb-4">${state.user.jabatan} (${state.user.golongan})</p>
+                                <div class="flex flex-wrap gap-2 justify-center md:justify-start">
+                                    <span class="bg-slate-100 text-slate-600 px-3 py-1 rounded-lg text-[10px] font-bold uppercase">NIP: ${state.user.nip}</span>
+                                    <span class="bg-slate-100 text-slate-600 px-3 py-1 rounded-lg text-[10px] font-bold uppercase">SATKER: ${state.user.satker}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="bg-green-700 text-white p-8 rounded-3xl shadow-xl shadow-green-200">
+                            <h4 class="font-bold text-lg mb-2">Informasi Kinerja</h4>
+                            <p class="text-green-100 text-sm opacity-80">Matriks kinerja Anda dihitung secara otomatis berdasarkan rata-rata nilai laporan harian yang telah divalidasi oleh pimpinan satker.</p>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        function renderAdminDisposisi() {
+            const myPegawai = state.users.filter(u => u.satker === state.user.satker && u.role === 'pegawai' && u.status === 'verified');
+            return `
+                <div class="space-y-6">
+                    <div class="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm">
+                        <h3 class="font-bold text-lg mb-6 flex items-center gap-2"><i data-lucide="send" class="text-green-600"></i> Buat Disposisi & Surat Tugas</h3>
+                        <form onsubmit="handleCreateTask(event)" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label class="block text-sm font-bold text-slate-600 mb-2">Pilih Pegawai</label>
+                                <select id="task-pegawai" class="w-full px-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none">
+                                    <option value="">-- Pilih --</option>
+                                    ${myPegawai.map(u => `<option value="${u.id}">${u.name}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-bold text-slate-600 mb-2">Perihal Tugas</label>
+                                <input id="task-name" type="text" class="w-full px-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none" placeholder="Contoh: Monitoring KUA">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-bold text-slate-600 mb-2">Link Surat Tugas (Google Drive/Cloud)</label>
+                                <input id="task-file" type="url" class="w-full px-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none" placeholder="https://drive.google.com/...">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-bold text-slate-600 mb-2">Batas Waktu</label>
+                                <input id="task-deadline" type="date" class="w-full px-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none">
+                            </div>
+                            <div class="md:col-span-2">
+                                <button type="submit" class="w-full bg-green-600 text-white font-bold py-4 rounded-2xl hover:bg-green-700 transition">Kirim Disposisi</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-slate-50 border-b border-slate-100">
+                                <tr>
+                                    <th class="p-5 font-bold text-slate-400 uppercase text-[10px]">Tugas</th>
+                                    <th class="p-5 font-bold text-slate-400 uppercase text-[10px]">Penerima</th>
+                                    <th class="p-5 font-bold text-slate-400 uppercase text-[10px]">Bukti Dukung</th>
+                                    <th class="p-5 font-bold text-slate-400 uppercase text-[10px]">Penilaian</th>
+                                    <th class="p-5 font-bold text-slate-400 uppercase text-[10px] text-right">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${state.tasks.filter(t => t.satker === state.user.satker).map(t => {
+                                    const peg = state.users.find(u => u.id === t.pegawaiId);
+                                    return `
+                                        <tr class="border-b border-slate-50">
+                                            <td class="p-5 font-bold">
+                                                ${t.name}<br>
+                                                <a href="${t.fileLink}" target="_blank" class="text-[10px] text-blue-500 hover:underline">Lihat Surat Tugas</a>
+                                            </td>
+                                            <td class="p-5 text-slate-600">${peg?.name || 'User'}</td>
+                                            <td class="p-5">
+                                                ${t.buktiDukung ? `<a href="${t.buktiDukung}" target="_blank" class="bg-slate-100 px-2 py-1 rounded text-[10px] font-bold text-slate-600">LIHAT BUKTI</a>` : '<span class="text-slate-300 italic">Belum ada</span>'}
+                                            </td>
+                                            <td class="p-5">
+                                                ${t.status === 'Selesai' ? `
+                                                    <select onchange="updateTaskGrade('${t.id}', this.value)" class="text-[10px] font-bold bg-slate-50 border-none rounded p-1">
+                                                        <option value="">Beri Nilai</option>
+                                                        <option value="A" ${t.nilai === 'A' ? 'selected' : ''}>A (Amat Baik)</option>
+                                                        <option value="B" ${t.nilai === 'B' ? 'selected' : ''}>B (Baik)</option>
+                                                        <option value="C" ${t.nilai === 'C' ? 'selected' : ''}>C (Cukup)</option>
+                                                    </select>
+                                                ` : '<span class="text-[10px] text-amber-500 font-bold uppercase">Progres</span>'}
+                                            </td>
+                                            <td class="p-5 text-right"><button onclick="deleteTask('${t.id}')" class="text-red-300 hover:text-red-500"><i data-lucide="trash-2" class="w-4 h-4"></i></button></td>
+                                        </tr>
+                                    `;
+                                }).join('') || '<tr><td colspan="5" class="p-10 text-center text-slate-400 italic">Data kosong.</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderPegawaiDisposisi() {
+            const myTasks = state.tasks.filter(t => t.pegawaiId === state.user.id);
+            return `
+                <div class="space-y-4">
+                    ${myTasks.map(t => `
+                        <div class="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                            <div class="flex flex-col md:flex-row justify-between items-start gap-4">
+                                <div class="flex-1">
+                                    <h3 class="font-bold text-lg mb-1">${t.name}</h3>
+                                    <div class="flex gap-4 text-[10px] font-bold uppercase mb-4">
+                                        <span class="text-red-500">Batas: ${t.deadline}</span>
+                                        <a href="${t.fileLink}" target="_blank" class="text-blue-500">Lihat Surat Tugas</a>
+                                    </div>
+                                    ${t.status !== 'Selesai' ? `
+                                        <div class="space-y-3">
+                                            <label class="block text-xs font-bold text-slate-500 uppercase">Input Link Bukti Dukung (Tanda Selesai)</label>
+                                            <div class="flex gap-2">
+                                                <input id="bukti-${t.id}" type="url" placeholder="https://link-laporan-anda.com" class="flex-1 px-4 py-2 bg-slate-50 border-none rounded-xl text-sm focus:ring-2 focus:ring-green-500 outline-none">
+                                                <button onclick="submitBuktiTugas('${t.id}')" class="bg-green-600 text-white font-bold px-6 py-2 rounded-xl text-sm hover:bg-green-700">Kirim Bukti</button>
+                                            </div>
+                                        </div>
+                                    ` : `
+                                        <div class="flex items-center gap-2 text-green-600 font-bold text-sm">
+                                            <i data-lucide="check-circle" class="w-4 h-4"></i> Tugas Selesai | Nilai: ${t.nilai || '-'}
+                                        </div>
+                                    `}
+                                </div>
+                            </div>
+                        </div>
+                    `).join('') || '<div class="text-center py-20 bg-white rounded-3xl border border-slate-100 text-slate-400 italic">Tidak ada disposisi masuk.</div>'}
+                </div>
+            `;
+        }
+
+        function renderPegawaiLaporan() {
+            return `
+                <div class="space-y-6">
+                    <div class="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm">
+                        <h3 class="font-bold text-lg mb-6">Input Laporan Harian</h3>
+                        <form onsubmit="handleCreateReport(event)" class="space-y-4">
+                            <div class="grid grid-cols-2 gap-4">
+                                <div><label class="block text-sm font-bold text-slate-600 mb-1">Tanggal</label><input id="report-date" type="date" required class="w-full px-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none"></div>
+                                <div><label class="block text-sm font-bold text-slate-600 mb-1">Waktu</label><input id="report-time" type="time" required class="w-full px-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none"></div>
+                            </div>
+                            <div><label class="block text-sm font-bold text-slate-600 mb-1">Deskripsi Kegiatan</label><textarea id="report-activity" required rows="2" class="w-full px-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none"></textarea></div>
+                            <div><label class="block text-sm font-bold text-slate-600 mb-1">Link Bukti Dukung (Link Saja)</label><input id="report-bukti" type="url" required placeholder="https://..." class="w-full px-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none"></div>
+                            <button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition">Kirim Laporan</button>
+                        </form>
+                    </div>
+                    <div class="space-y-4">
+                        ${state.reports.filter(r => r.pegawaiId === state.user.id).map(r => `
+                            <div class="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                                <div class="flex justify-between items-start mb-2">
+                                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">${r.date} | ${r.time}</div>
+                                    <span class="px-2 py-0.5 rounded bg-blue-50 text-blue-600 text-[10px] font-bold uppercase">${r.penilaian || 'Reviewing'}</span>
+                                </div>
+                                <p class="text-slate-700 font-medium mb-2">${r.activity}</p>
+                                <a href="${r.buktiLink}" target="_blank" class="text-[10px] text-blue-500 font-bold hover:underline italic">BUKTI: ${r.buktiLink}</a>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderAdminLaporan() {
+            const myReports = state.reports.filter(r => r.satker === state.user.satker);
+            return `
+                <div class="space-y-4">
+                    ${myReports.map(r => {
+                        const peg = state.users.find(u => u.id === r.pegawaiId);
+                        return `
+                            <div class="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex flex-col md:flex-row justify-between items-center gap-6">
+                                <div class="flex-1">
+                                    <div class="flex items-center gap-3 mb-2">
+                                        <span class="font-bold text-slate-800">${peg?.name || 'User'}</span>
+                                        <span class="text-[10px] text-slate-400 font-bold uppercase">${r.date}</span>
+                                    </div>
+                                    <p class="text-slate-600 text-sm leading-relaxed mb-2">"${r.activity}"</p>
+                                    <a href="${r.buktiLink}" target="_blank" class="text-[10px] text-blue-500 hover:underline">Lihat Bukti Dukung</a>
+                                </div>
+                                <div class="w-full md:w-48 space-y-2">
+                                    <label class="block text-[10px] font-bold text-slate-400 uppercase">Input Penilaian</label>
+                                    <select onchange="updateReportGrade('${r.id}', this.value)" class="w-full p-2 bg-slate-50 border-none text-xs font-bold rounded-lg outline-none">
+                                        <option value="">-- Beri Nilai --</option>
+                                        <option value="Sangat Baik" ${r.penilaian === 'Sangat Baik' ? 'selected' : ''}>Sangat Baik</option>
+                                        <option value="Baik" ${r.penilaian === 'Baik' ? 'selected' : ''}>Baik</option>
+                                        <option value="Cukup" ${r.penilaian === 'Cukup' ? 'selected' : ''}>Cukup</option>
+                                    </select>
+                                    <button onclick="deleteReport('${r.id}')" class="w-full text-center text-[10px] text-red-400 font-bold hover:text-red-600">Hapus Laporan</button>
+                                </div>
+                            </div>
+                        `;
+                    }).join('') || '<div class="text-center py-20 text-slate-400 italic">Belum ada laporan dari pegawai.</div>'}
+                </div>
+            `;
+        }
+
+        function renderAdminVerifikasi() {
+            const myPegawai = state.users.filter(u => u.satker === state.user.satker && u.role === 'pegawai');
+            return `
+                <div class="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                    <div class="p-6 border-b border-slate-100 bg-slate-50/50">
+                        <h3 class="font-bold text-slate-800">Direktori & Verifikasi Akun</h3>
+                    </div>
+                    <table class="w-full text-left">
+                        <thead class="bg-slate-50 text-[10px] font-bold text-slate-400 uppercase">
+                            <tr>
+                                <th class="p-5">Pegawai</th>
+                                <th class="p-5">Jabatan / Gol</th>
+                                <th class="p-5">Akun (U/P)</th>
+                                <th class="p-5">Status</th>
+                                <th class="p-5 text-center">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${myPegawai.map(u => `
+                                <tr class="border-b border-slate-50 hover:bg-slate-50 transition">
+                                    <td class="p-5 font-bold text-slate-700">${u.name}<br><span class="text-[10px] font-mono text-slate-400">${u.nip}</span></td>
+                                    <td class="p-5 text-sm font-semibold">${u.jabatan}<br><span class="text-[10px] text-blue-500 font-bold">${u.golongan}</span></td>
+                                    <td class="p-5"><code class="text-[10px] bg-slate-100 px-2 py-1 rounded">${u.nip} / ${u.password}</code></td>
+                                    <td class="p-5">
+                                        ${u.status === 'pending' ? '<span class="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-bold">PENDING</span>' : '<span class="px-2 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-bold">AKTIF</span>'}
+                                    </td>
+                                    <td class="p-5 flex justify-center gap-2">
+                                        ${u.status === 'pending' ? `
+                                            <button onclick="verifyUser('${u.id}', 'verified')" class="px-3 py-1 bg-green-600 text-white text-[10px] font-bold rounded hover:bg-green-700">Terima</button>
+                                            <button onclick="verifyUser('${u.id}', 'rejected')" class="px-3 py-1 bg-red-100 text-red-600 text-[10px] font-bold rounded hover:bg-red-200">Hapus</button>
+                                        ` : `<button onclick="verifyUser('${u.id}', 'rejected')" class="text-red-300 hover:text-red-500"><i data-lucide="trash-2" class="w-4 h-4"></i></button>`}
+                                    </td>
+                                </tr>
+                            `).join('') || '<tr><td colspan="5" class="p-10 text-center text-slate-400">Belum ada data.</td></tr>'}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        // --- HANDLERS ---
+        function navigate(view) { state.view = view; render(); }
+        function switchTab(tab) { state.activeTab = tab; render(); }
+        
+        function handleLogin(e) {
+            e.preventDefault();
+            const nip = document.getElementById('login-nip').value;
+            const pass = document.getElementById('login-pass').value;
+            const user = state.users.find(u => u.nip === nip && u.password === pass);
+            if (user) {
+                state.user = user;
+                if (user.status === 'pending') state.view = 'pending';
+                else { state.view = 'dashboard'; state.activeTab = 'home'; }
+                showToast(`Selamat datang, ${user.name}`);
+            } else { showToast('NIP atau Password salah!', 'error'); }
+            render();
+        }
+
+        function handleRegister(e) {
+            e.preventDefault();
+            const data = {
+                id: Date.now().toString(),
+                name: document.getElementById('reg-name').value,
+                nip: document.getElementById('reg-nip').value,
+                satker: document.getElementById('reg-satker').value,
+                jabatan: document.getElementById('reg-jabatan').value,
+                golongan: document.getElementById('reg-golongan').value,
+                password: document.getElementById('reg-pass').value,
+                role: 'pegawai',
+                status: 'pending'
+            };
+            if (state.users.some(u => u.nip === data.nip)) return showToast('NIP sudah terdaftar!', 'error');
+            state.users.push(data);
+            saveState();
+            showToast('Pendaftaran diajukan!');
+            state.view = 'login';
+            render();
+        }
+
+        function handleCreateTask(e) {
+            e.preventDefault();
+            const task = {
+                id: Date.now().toString(),
+                pegawaiId: document.getElementById('task-pegawai').value,
+                name: document.getElementById('task-name').value,
+                fileLink: document.getElementById('task-file').value,
+                deadline: document.getElementById('task-deadline').value,
+                satker: state.user.satker,
+                status: 'Berjalan',
+                buktiDukung: '',
+                nilai: ''
+            };
+            if (!task.pegawaiId || !task.name || !task.fileLink) return showToast('Lengkapi data!', 'error');
+            state.tasks.push(task);
+            saveState(); showToast('Disposisi terkirim'); render();
+        }
+
+        function submitBuktiTugas(id) {
+            const link = document.getElementById(`bukti-${id}`).value;
+            if (!link) return showToast('Masukkan link bukti dukung!', 'error');
+            const idx = state.tasks.findIndex(t => t.id === id);
+            state.tasks[idx].buktiDukung = link;
+            state.tasks[idx].status = 'Selesai';
+            saveState(); showToast('Tugas dilaporkan selesai'); render();
+        }
+
+        function updateTaskGrade(id, nilai) {
+            const idx = state.tasks.findIndex(t => t.id === id);
+            state.tasks[idx].nilai = nilai;
+            saveState(); showToast('Nilai tugas disimpan'); render();
+        }
+
+        function handleCreateReport(e) {
+            e.preventDefault();
+            const report = {
+                id: Date.now().toString(),
+                pegawaiId: state.user.id,
+                satker: state.user.satker,
+                date: document.getElementById('report-date').value,
+                time: document.getElementById('report-time').value,
+                activity: document.getElementById('report-activity').value,
+                buktiLink: document.getElementById('report-bukti').value,
+                penilaian: ''
+            };
+            state.reports.push(report);
+            saveState(); showToast('Laporan harian terkirim'); render();
+        }
+
+        function updateReportGrade(id, grade) {
+            const idx = state.reports.findIndex(r => r.id === id);
+            state.reports[idx].penilaian = grade;
+            saveState(); render();
+        }
+
+        function verifyUser(id, status) {
+            const idx = state.users.findIndex(u => u.id === id);
+            if (status === 'rejected') state.users.splice(idx, 1);
+            else state.users[idx].status = 'verified';
+            saveState(); render();
+        }
+
+        function deleteTask(id) { state.tasks = state.tasks.filter(t => t.id !== id); saveState(); render(); }
+        function deleteReport(id) { state.reports = state.reports.filter(r => r.id !== id); saveState(); render(); }
+        function logout() { state.user = null; state.view = 'login'; render(); }
+
+        render();
+    </script>
+</body>
+</html>
